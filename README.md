@@ -44,8 +44,7 @@ Feb/May/Aug/Nov over the quarter's last three published months. Sample/dev run: 
 
 ## Verify
 ```bash
-set -a; source .env; set +a
-python scripts/verify_pipeline.py --months 2024-01 --minio-endpoint http://localhost:9000 --pg-host localhost --pg-port 5433
+docker compose exec airflow-scheduler python /opt/project/scripts/verify_pipeline.py --months 2024-01 --skip-services
 docker compose exec -T postgres psql -U postgres -d taxi -f /sql/queries/example_queries.sql
 ```
 Tests: `pip install -r requirements-dev.txt && pytest tests/unit` (needs Java 17+). Integration tests
