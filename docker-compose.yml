@@ -1,0 +1,213 @@
+name: nyc-taxi-pipeline
+
+# Every service is an isolated container on the private `backend` network.
+# Host ports are bound to 127.0.0.1 only (nothing is exposed to the LAN).
+
+x-airflow-env: &airflow-env
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:?set in .env}@airflow-db:5432/airflow
+  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?set in .env}
+  AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:?set in .env}
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+  PYTHONPATH: /opt/project
+  # Pipeline configuration (least privilege: only the ETL role + pipeline S3 key)
+  MINIO_ENDPOINT: http://minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_PIPELINE_ACCESS_KEY:?set in .env}
+  MINIO_SECRET_KEY: ${MINIO_PIPELINE_SECRET_KEY:?set in .env}
+  PG_HOST: postgres
+  PG_PORT: "5432"
+  PG_DB: ${POSTGRES_DB:-taxi}
+  PG_USER: ${ETL_DB_USER:-etl_writer}
+  PG_PASSWORD: ${ETL_DB_PASSWORD:?set in .env}
+  SPARK_MASTER: ${SPARK_MASTER:-spark://spark-master:7077}
+  SPARK_DRIVER_MEMORY: ${SPARK_DRIVER_MEMORY:-1g}
+  SPARK_EXECUTOR_MEMORY: ${SPARK_EXECUTOR_MEMORY:-2g}
+  SPARK_SHUFFLE_PARTITIONS: ${SPARK_SHUFFLE_PARTITIONS:-16}
+  SPARK_DRIVER_HOST: airflow-scheduler
+  SPARK_IVY_DIR: /opt/ivy
+  TLC_BASE_URL: ${TLC_BASE_URL:-https://d37ci6vzurychx.cloudfront.net/trip-data}
+  TLC_ZONE_LOOKUP_URL: ${TLC_ZONE_LOOKUP_URL:-https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv}
+  PIPELINE_MONTHS: ${PIPELINE_MONTHS:-2024-01}
+  SAMPLE_FRACTION: ${SAMPLE_FRACTION:-1.0}
+  MAX_TRIP_HOURS: ${MAX_TRIP_HOURS:-24}
+  MAX_TRIP_DISTANCE_MILES: ${MAX_TRIP_DISTANCE_MILES:-500}
+  MAX_FARE_AMOUNT: ${MAX_FARE_AMOUNT:-1000}
+  MIN_SOURCE_ROWS: ${MIN_SOURCE_ROWS:-1000000}
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  image: nyc-taxi-airflow:local
+  environment: *airflow-env
+  volumes:
+    - ./dags:/opt/airflow/dags:ro
+    - ./src:/opt/project/src:ro
+    - ./scripts:/opt/project/scripts:ro
+    - airflow-logs:/opt/airflow/logs
+    - ivycache:/opt/ivy
+  networks: [backend]
+
+services:
+  # ---------------------------------------------------------------- storage
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2024-10-13T13-34-11Z}
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set in .env}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks: [backend]
+
+  minio-init:
+    image: ${MC_IMAGE:-minio/mc:RELEASE.2024-10-08T09-37-26Z}
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set in .env}
+      MINIO_PIPELINE_ACCESS_KEY: ${MINIO_PIPELINE_ACCESS_KEY:?set in .env}
+      MINIO_PIPELINE_SECRET_KEY: ${MINIO_PIPELINE_SECRET_KEY:?set in .env}
+    volumes:
+      - ./docker/minio:/config:ro
+    entrypoint: ["/bin/sh", "/config/init.sh"]
+    restart: "no"
+    networks: [backend]
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-taxi}
+      ETL_DB_USER: ${ETL_DB_USER:-etl_writer}
+      ETL_DB_PASSWORD: ${ETL_DB_PASSWORD:?set in .env}
+      ML_DB_USER: ${ML_DB_USER:-ml_reader}
+      ML_DB_PASSWORD: ${ML_DB_PASSWORD:?set in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql:/sql:ro
+      - ./sql/init/00_init.sh:/docker-entrypoint-initdb.d/00_init.sh:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER:-postgres} -d ${POSTGRES_DB:-taxi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks: [backend]
+
+  # ------------------------------------------------------------- processing
+  spark-master:
+    image: apache/spark:3.5.3
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8080'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks: [backend]
+
+  spark-worker:
+    image: apache/spark:3.5.3
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    environment:
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-3g}
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-2}
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [backend]
+
+  # ---------------------------------------------------------- orchestration
+  airflow-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:?set in .env}
+      POSTGRES_DB: airflow
+    volumes:
+      - airflowdb:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks: [backend]
+
+  airflow-init:
+    <<: *airflow-common
+    command:
+      - bash
+      - -c
+      - >-
+        airflow db migrate &&
+        airflow users create --username "$$AIRFLOW_ADMIN_USER" --password "$$AIRFLOW_ADMIN_PASSWORD"
+        --firstname Admin --lastname User --role Admin --email admin@example.com || true
+    environment:
+      <<: *airflow-env
+      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?set in .env}
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    hostname: airflow-scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      spark-master:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  pgdata:
+  airflowdb:
+  miniodata:
+  airflow-logs:
+  ivycache:

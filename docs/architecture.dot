@@ -1,0 +1,38 @@
+digraph G {
+  rankdir=LR; fontname="Helvetica"; nodesep=0.35; ranksep=0.7; compound=true;
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, fillcolor="#FFFFFF", color="#4A5568"];
+  edge [fontname="Helvetica", fontsize=9, color="#4A5568"];
+  labelloc=t; fontsize=16;
+  label="NYC Taxi batch data backend - local Docker Compose (network: backend, ports bound to 127.0.0.1)";
+
+  tlc [label="NYC TLC\nofficial Parquet files\n(monthly, ~2 month lag)", shape=cylinder, fillcolor="#EDF2F7"];
+  ml  [label="Downstream ML app\n(quarterly model refresh)\nOUT OF SCOPE", shape=box, style="rounded,dashed", fillcolor="#FFFFFF"];
+
+  subgraph cluster_orch { label="Orchestration"; style="rounded,filled"; fillcolor="#FEFCBF"; color="#B7791F";
+    af_web [label="Airflow webserver"]; af_sch [label="Airflow scheduler\n(+ Spark driver)"]; af_db [label="airflow-db\nPostgres 16", shape=cylinder];
+    af_web -> af_db [dir=none]; af_sch -> af_db [dir=none]; }
+
+  subgraph cluster_ing { label="1  Ingestion (monthly DAG)"; style="rounded,filled"; fillcolor="#E6FFFA"; color="#2C7A7B";
+    ing [label="download_tlc.py\nretry, size + Parquet check,\nsha256 manifest, idempotent"]; }
+
+  subgraph cluster_store { label="2  Storage - MinIO (S3), least-privilege service key"; style="rounded,filled"; fillcolor="#EBF8FF"; color="#2B6CB0";
+    raw [label="taxi-raw\nsource Parquet + manifests", shape=cylinder];
+    cln [label="taxi-cleaned\naccepted rows\n(by pickup_month)", shape=cylinder];
+    rej [label="taxi-rejected\nrows + reject_reason", shape=cylinder];
+    cur [label="taxi-curated\nhourly metrics + features\n+ batch metrics JSON", shape=cylinder]; }
+
+  subgraph cluster_proc { label="3  Processing (quarterly DAG)"; style="rounded,filled"; fillcolor="#FAF5FF"; color="#6B46C1";
+    sm [label="spark-master"]; sw [label="spark-worker(s)\nscale: --scale"];
+    job [label="batch_job.py\nvalidate - flag - dedupe\nhourly x zone aggregation\nlag/rolling features"]; sm -> sw; job -> sm [label="submit"]; }
+
+  subgraph cluster_srv { label="4  Serving - PostgreSQL 16"; style="rounded,filled"; fillcolor="#F0FFF4"; color="#2F855A";
+    stg [label="staging.*\n(truncate + load)"]; srv [label="serving.hourly_zone_metrics\nserving.forecast_features\nserving.taxi_zones", shape=cylinder]; ops [label="ops.batch_runs\n(lineage, DQ counts, timings)", shape=cylinder];
+    stg -> srv [label="1 transaction:\ndelete window + insert"]; stg -> ops [label="run record\n(same transaction)", style=dashed]; }
+
+  tlc -> ing [label="HTTPS"]; ing -> raw;
+  raw -> job [label="s3a read"]; job -> cln; job -> rej; job -> cur;
+  job -> stg [label="JDBC"]; 
+  srv -> ml [label="read-only role\nml_reader", style=dashed];
+  af_sch -> ing [label="monthly DAG", style=dotted, color="#B7791F"];
+  af_sch -> job [label="quarterly DAG", style=dotted, color="#B7791F"];
+}

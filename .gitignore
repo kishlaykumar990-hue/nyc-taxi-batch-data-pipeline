@@ -1,0 +1,32 @@
+# Secrets and local configuration
+.env
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Spark / local artefacts
+spark-warehouse/
+metastore_db/
+derby.log
+*.crc
+
+# Data is never committed (reproduced via the ingestion DAG)
+data/
+*.parquet
+*.csv.gz
+
+# Airflow
+airflow-logs/
+logs/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
