@@ -11,7 +11,7 @@ Status key: **Verified** = executed here with evidence · **Implemented** = writ
 | 5 | Reliability | retries/backoff, healthchecks, restart, atomic publish | Verified (publish tx tests); rest Implemented |
 | 6 | Scalability | partitioned Parquet, scalable workers, shuffle partitions | Implemented; benchmark on real data **Open** |
 | 7 | Maintainability | env config, pure functions, tests, docs | Verified (44 unit tests) |
-| 8 | Security/governance/protection | roles, scoped MinIO key, localhost ports, lineage, docs | Verified for Postgres roles; docs written |
+| 8 | Security/governance/protection | Postgres roles, localhost ports, lineage, docs | Verified for Postgres roles; docs written |
 | 9 | Ingestion/pre-processing/aggregation incl. missing/dup/invalid data | `transform.py`, DQ doc | Verified (unit + e2e synthetic) |
 | 10 | Frequency stated (monthly ingest, quarterly deliver) | two DAG schedules | Implemented |
 | 11 | Architecture flow chart (PNG) + pros/cons | `docs/architecture.png`, phase 1 text | Done |

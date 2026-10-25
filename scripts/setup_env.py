@@ -21,7 +21,7 @@ def pw() -> str:                       # letters+digits only: safe in URLs/shell
 
 values = {
     "POSTGRES_ADMIN_PASSWORD": pw(), "ETL_DB_PASSWORD": pw(), "ML_DB_PASSWORD": pw(),
-    "MINIO_ROOT_PASSWORD": pw(), "MINIO_PIPELINE_SECRET_KEY": pw(),
+    "MINIO_ROOT_PASSWORD": pw(),
     "AIRFLOW_DB_PASSWORD": pw(), "AIRFLOW_ADMIN_PASSWORD": pw(),
     "AIRFLOW_FERNET_KEY": base64.urlsafe_b64encode(os.urandom(32)).decode(),  # valid Fernet key format
     "AIRFLOW_SECRET_KEY": secrets.token_hex(32),

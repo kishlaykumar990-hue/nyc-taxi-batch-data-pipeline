@@ -13,8 +13,8 @@ x-airflow-env: &airflow-env
   PYTHONPATH: /opt/project
   # Pipeline configuration (least privilege: only the ETL role + pipeline S3 key)
   MINIO_ENDPOINT: http://minio:9000
-  MINIO_ACCESS_KEY: ${MINIO_PIPELINE_ACCESS_KEY:?set in .env}
-  MINIO_SECRET_KEY: ${MINIO_PIPELINE_SECRET_KEY:?set in .env}
+  MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set in .env}
+  MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set in .env}
   PG_HOST: postgres
   PG_PORT: "5432"
   PG_DB: ${POSTGRES_DB:-taxi}
@@ -52,7 +52,11 @@ x-airflow-common: &airflow-common
 services:
   # ---------------------------------------------------------------- storage
   minio:
-    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2024-10-13T13-34-11Z}
+    # S3-compatible object store. MinIO withdrew its images from Docker Hub/Quay, so the
+    # image is configurable: see MINIO_IMAGE in .env.example. `user: "0:0"` lets images that
+    # default to a non-root user write to the fresh volume.
+    image: ${MINIO_IMAGE:?set MINIO_IMAGE in .env}
+    user: "0:0"
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set in .env}
@@ -62,29 +66,15 @@ services:
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
     restart: unless-stopped
     networks: [backend]
 
   minio-init:
-    image: ${MC_IMAGE:-minio/mc:RELEASE.2024-10-08T09-37-26Z}
+    <<: *airflow-common
+    command: ["python", "/opt/project/scripts/init_buckets.py"]
     depends_on:
-      minio:
-        condition: service_healthy
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set in .env}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set in .env}
-      MINIO_PIPELINE_ACCESS_KEY: ${MINIO_PIPELINE_ACCESS_KEY:?set in .env}
-      MINIO_PIPELINE_SECRET_KEY: ${MINIO_PIPELINE_SECRET_KEY:?set in .env}
-    volumes:
-      - ./docker/minio:/config:ro
-    entrypoint: ["/bin/sh", "/config/init.sh"]
+      - minio
     restart: "no"
-    networks: [backend]
 
   postgres:
     image: postgres:16

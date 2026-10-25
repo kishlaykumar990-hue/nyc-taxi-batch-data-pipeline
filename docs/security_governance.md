@@ -3,7 +3,7 @@
 ## Implemented
 - **Secrets**: only in git-ignored `.env`; `.env.example` has placeholders; compose uses `${VAR:?}` so startup fails if one is missing.
 - **Least privilege (Postgres)**: `etl_writer` (staging/serving/ops only, cannot create or drop in `serving`), `ml_reader` (SELECT on `serving` only). Verified by integration tests against a real PostgreSQL 16.
-- **Least privilege (MinIO)**: pipeline uses a service account whose policy covers only the four `taxi-*` buckets; root credentials are used only by the one-shot `minio-init` job.
+- **Object store access**: MinIO's public images (and the `mc` admin client) are no longer available, so the pipeline uses the object store's single root account instead of a scoped service account. This is a *reduced* least-privilege posture (documented limitation); with a client that supports admin policies, create a service account limited to the four `taxi-*` buckets.
 - **Network exposure**: one private bridge network; all published ports bound to `127.0.0.1`.
 - **Isolation**: one container per component, restart policies, health checks, source mounted read-only.
 - **Input validation**: month format/contiguity, size and Parquet check on download, schema contract, plausibility rules.
