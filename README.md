@@ -1,31 +1,11 @@
 # NYC Taxi Demand and Fare Analytics: Batch Data Pipeline
 
-Course project for IU *Data Engineering* (DLMDSEDE02), Task 1: a reproducible, local, Docker-based **batch**
-data architecture. It ingests the official NYC Taxi & Limousine Commission (TLC) yellow-taxi trip records,
-validates and cleans them, aggregates them by pickup hour and taxi zone, and delivers forecasting-ready tables to
-PostgreSQL for a downstream machine learning application that retrains quarterly (the ML application itself is
-not part of this project).
 
-![architecture](docs/architecture.png)
 
-## Table of contents
-1. [Project overview](#1-project-overview)
-2. [Architecture and technology](#2-architecture-and-technology)
-3. [Data flow](#3-data-flow)
-4. [Data model](#4-data-model)
-5. [Quick start](#5-quick-start)
-6. [Running the pipeline](#6-running-the-pipeline)
-7. [Verifying the result](#7-verifying-the-result)
-8. [Interfaces and endpoints](#8-interfaces-and-endpoints)
-9. [Configuration](#9-configuration)
-10. [Project structure](#10-project-structure)
-11. [Tests](#11-tests)
-12. [Reliability, scalability, maintainability, security](#12-reliability-scalability-maintainability-security)
-13. [Troubleshooting](#13-troubleshooting)
-14. [Status and limitations](#14-status-and-limitations)
-15. [Cleanup](#15-cleanup)
 
----
+
+
+
 
 ## 1. Project overview
 
@@ -47,6 +27,8 @@ negative fares or trips that end before they start) and are published monthly.
 rhythm and the model's retraining cycle.
 
 ## 2. Architecture and technology
+
+![architecture](docs/architecture.png)
 
 Every component is an isolated Docker Compose service on a private network; all published ports are bound to
 `127.0.0.1` (nothing is exposed to the local network).
@@ -357,3 +339,5 @@ checks. Benchmark results and timings: [benchmarks/RESULTS.md](benchmarks/RESULT
 docker compose down        # stop and remove containers, KEEP data
 docker compose down -v     # stop and DELETE all data volumes (starts from scratch)
 ```
+## License
+Submitted as an academic portfolio project for IU Internationale Hochschule (DLMDSEDE02). All rights reserved.
