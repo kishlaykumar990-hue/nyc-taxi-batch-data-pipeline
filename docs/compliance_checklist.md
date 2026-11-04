@@ -5,12 +5,12 @@ Status key: **Verified** = executed here with evidence · **Implemented** = writ
 | # | Requirement (source: assignment) | Implementation | Status / evidence |
 |---|---|---|---|
 | 1 | Batch system: ingest, store, pre-process, aggregate, deliver for ML | Airflow + download_tlc + MinIO + Spark + Postgres | Implemented; Spark core Verified on synthetic data |
-| 2 | Dataset >= 1,000,000 time-referenced points | TLC yellow Jan 2024 (verify actual count) ; check in `verify_pipeline.py` | **Open**: confirm count on real file. Synthetic 1.206M verified for logic only |
-| 3 | Microservices, Docker, images from Docker Hub | `docker-compose.yml` (9 services) | Implemented; not started here (no daemon) |
+| 2 | Dataset >= 1,000,000 time-referenced points | TLC yellow Jan 2024 (verify actual count) ; check in `verify_pipeline.py` | **Verified on real data**: 2,964,624 source rows (verify_pipeline.py, 15/15 PASS) |
+| 3 | Microservices, Docker, images from Docker Hub | `docker-compose.yml` (9 services) | Verified: stack started and ran on the student's machine |
 | 4 | IaC, reproducible, version control | compose, SQL, init scripts, `.env.example`, Git repo | Implemented; local git repo created, push is yours |
-| 5 | Reliability | retries/backoff, healthchecks, restart, atomic publish | Verified (publish tx tests); rest Implemented |
-| 6 | Scalability | partitioned Parquet, scalable workers, shuffle partitions | Implemented; benchmark on real data **Open** |
-| 7 | Maintainability | env config, pure functions, tests, docs | Verified (44 unit tests) |
+| 5 | Reliability | retries/backoff, healthchecks, restart, atomic publish | Verified (7 PostgreSQL integration tests passed); rest Implemented |
+| 6 | Scalability | partitioned Parquet, scalable workers, shuffle partitions | Implemented; one real-data run recorded; partition/multi-month comparison **Open** |
+| 7 | Maintainability | env config, pure functions, tests, docs | Verified: 44 unit tests passed (run in the Airflow container) |
 | 8 | Security/governance/protection | Postgres roles, localhost ports, lineage, docs | Verified for Postgres roles; docs written |
 | 9 | Ingestion/pre-processing/aggregation incl. missing/dup/invalid data | `transform.py`, DQ doc | Verified (unit + e2e synthetic) |
 | 10 | Frequency stated (monthly ingest, quarterly deliver) | two DAG schedules | Implemented |
